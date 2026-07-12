@@ -1,3 +1,5 @@
+<img src="MSP-vs-MO.png" alt="Size comparison" width="1400">
+
 # List of Benchmarks in this file:
 ### SingleSource/Benchmarks & MultiSource, -Oz
 ```
