@@ -13,29 +13,40 @@ Some of the features of the pass include (most of which are not possible with ex
 - Outlining a majority of function calls: This pass has a separate analysis pass which strategically runs right before PEI, in order to relay information about whether each function callsite uses the stack to pass arguments. This is clearly important for outlining as a call to an outlined function changes the meaning of stack-accessing instructions in those outlined functions. This pass can outline most functions which do not pass arguments on the stack, while complying with stack offset rules.
 
 - Parameterized immediates: This pass can parameterize most immediates, which are being used as either values or as displacements. I have built a process to find available registers in the intersection of all callsites in a group, then ensure that these registers are not overwritten from the callsite to the first usage of the parameter in the outlined region. There is a cool special case here, I call "parameter tunnelling". Let me show it to you:
+```
 Repeat 1:
   movq $5, %rdx
   more instructions ...
+```
 ...
+```
 Repeat 2:
   movq $9, %rdx
   more instructions ...
+```
 Now if %rdx becomes the "carrier" register (carries the immediate from each callsite), then in the outlined function, the movq can be removed, since that instruction, in the outlined function, becomes: movq %rdx, %rdx. So in this case, the parameterization itself is free. From testing, about 25% of profitable outlined regions with parameters have a tunnelled parameter.
+```
 Repeat 1:
   movq $5, %rdx
   call outlined-function
+```
 ...
+```
 Repeat 2:
   movq $9, %rdx
   call outlined-function
+```
 ...
+```
 outlined-function:
   movq %rdx, %rdx <-- removed
   more instructions ...
-
+```
 - Stack-pointer-accessing instructions: Most instructions which read/modify the stack pointer are allowed to be outlined, with some restrictions. A couple of the main ones are: modifications must be known and net-zero across the outlined region, and functions using stack args are not allowed (though these are a minority). All stack pointer accesses have "fixups" depending on the semantics of the access, which allow them to be repaired in the outlined function. They can also have their immediates parameterized, as well as have their opcode canonicalized to an equivalent version, allowing them to be outlined/parameterized with fixups. A simple example of this in x86-64 is:
+```
 $r15 = MOV64rr $rsp
 $r15 = LEA64r $rsp, 1, $noreg, [0 / can put a new offset here], $noreg
+```
 
 - The tokenization stage is built around making integer tokens, which are unique upto the abstract "shape" of an instruction. This abstraction allows for choosing what instructions are considered "similar". Two integer tokens are equal if their shapes are equal, which corresponds to their instructions being similar. Being able to decide this shape allows for fine-grained control of what we consider similar, and what components we know are repairable later on. It also gives an intuitive way to reduce further problems of finding similarities into: "Can you find a way to make the shapes match IFF you consider them similar?". The integer tokens are then fed to a suffix tree, much like the machine outliner, which efficiently finds exact repeated sequences. Since the abstraction is builtin to the token itself, exact repeats of tokens can represent similar sequences of instructions. This tokenization stage allows the pass to run with the same time complexity as the machine outliner.
 
@@ -45,6 +56,8 @@ $r15 = LEA64r $rsp, 1, $noreg, [0 / can put a new offset here], $noreg
 
 There are many ways by which to test a pass like this, but I will try to show a few:
 Compiling the 25 largest files in llvm-project/build, -Oz:
+
+```
  -118970  -9.810%  base= 1212754 param= 1093784  ELFDumper.cpp.o
  -116261 -11.367%  base= 1022760 param=  906499  AttrImpl.cpp.o
  -110700  -4.835%  base= 2289759 param= 2179059  Registry.cpp.o
@@ -74,7 +87,9 @@ objects:     25
 base text:   34935998
 param text:  33876134
 delta:       -1059864 bytes (-3.034%)
+```
 
+```
 Top 60 / Bottom 10 from SingleSource/Benchmarks;MultiSource;MicroBenchmarks, -Oz
 programs:    342
 base text:   12203647
@@ -150,6 +165,7 @@ delta:       -206723 bytes (-1.694%)
      +64  +0.554%  base=   11542 msp=   11606  bigfib
     +147  +0.756%  base=   19447 msp=   19594  stepanov_vector
     +658  +0.315%  base=  208817 msp=  209475  spirit
+```
 
 
 ## Website/Youtube Abstract
